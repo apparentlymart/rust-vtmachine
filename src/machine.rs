@@ -40,15 +40,7 @@ impl<H: VtHandler> VtMachine<H> {
         }
     }
 
-    pub fn write_char(&mut self, mut c: char) {
-        // Codes in the GR area are treated as aliases for GL codes.
-        if c >= '\u{a0}' && c <= '\u{ff}' {
-            let v = (c as u32) - (0xa0 - 0x20);
-            // Safety: we directly constrain the range of v above
-            c = unsafe { char::from_u32_unchecked(v) };
-        }
-        let c = c; // no longer mut
-
+    pub fn write_char(&mut self, c: char) {
         // Some characters have the same effect regardless of the current state.
         match c {
             '\u{18}'
