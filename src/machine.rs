@@ -394,7 +394,7 @@ enum State {
     IgnoreUntilSt,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct VtParams {
     buf: [u16; 16],
     len: usize,
@@ -458,7 +458,15 @@ impl VtParams {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl core::fmt::Debug for VtParams {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("VtParams")
+            .field(&&self.buf[..self.len])
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct VtIntermediates {
     buf: [char; 2],
     len: u8, // greater than length of buf means overrun
@@ -512,5 +520,13 @@ impl VtIntermediates {
     #[inline(always)]
     pub const fn has_overrun(&self) -> bool {
         self.len as usize > self.buf.len()
+    }
+}
+
+impl core::fmt::Debug for VtIntermediates {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("VtIntermediates")
+            .field(&&self.buf[..(self.len as usize)])
+            .finish()
     }
 }
