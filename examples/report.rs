@@ -10,7 +10,9 @@ fn main() -> Result<(), std::io::Error> {
     let mut buf = [0_u8; 64];
     let mut read_start = 0_usize;
     loop {
-        let read_len = r.read(&mut buf[read_start..])?;
+        // VtMachine wants str or char as input, so we need to interpret stdin as
+        // UTF-8 first before we can feed chunks to the state machine.
+        let read_len = r.read(&mut buf[read_start..])? + read_start;
         if read_len == 0 {
             return Ok(());
         }
