@@ -18,7 +18,7 @@ pub trait VtHandler {
     /// Executes an individual C0 or C1 control character, such as newline, carriage return,
     /// horizontal tab, etc.
     #[inline(always)]
-    fn execute_ctrl(&mut self, c: char) {
+    fn execute_ctrl(&mut self, c: u8) {
         let _ = c;
         // Silently ignores individual control characters by default.
     }
@@ -31,7 +31,7 @@ pub trait VtHandler {
     ///
     /// It's up to the implementation to assign meaning to `cmd` and the other arguments.
     #[inline(always)]
-    fn dispatch_csi(&mut self, cmd: char, params: &VtParams, intermediates: &VtIntermediates) {
+    fn dispatch_csi(&mut self, cmd: u8, params: &VtParams, intermediates: &VtIntermediates) {
         let _ = (cmd, params, intermediates);
         // Silently ignored by default.
     }
@@ -42,7 +42,7 @@ pub trait VtHandler {
     /// any intermediate characters that appeared between the initial ESC and the final
     /// character.
     #[inline(always)]
-    fn dispatch_esc(&mut self, cmd: char, intermediates: &VtIntermediates) {
+    fn dispatch_esc(&mut self, cmd: u8, intermediates: &VtIntermediates) {
         let _ = (cmd, intermediates);
         // Silently ignored by default.
     }
@@ -64,7 +64,7 @@ pub trait VtHandler {
     /// prepare to recieve zero or more calls to [`VtHandler::dcs_char`] followed by
     /// one call to [`VtHandler::dcs_end`].
     #[inline(always)]
-    fn dcs_start(&mut self, cmd: char, params: &VtParams, intermediates: &VtIntermediates) {
+    fn dcs_start(&mut self, cmd: u8, params: &VtParams, intermediates: &VtIntermediates) {
         let _ = (cmd, params, intermediates);
         // Silently ignored by default.
     }
@@ -83,7 +83,7 @@ pub trait VtHandler {
     ///
     /// This only appears after an earlier call to [`VtHandler::dcs_start`].
     #[inline(always)]
-    fn dcs_end(&mut self, c: char) {
+    fn dcs_end(&mut self, c: u8) {
         let _ = c;
         // Silently ignored by default.
     }
@@ -93,7 +93,7 @@ pub trait VtHandler {
     /// This will be followed by zero or more [`VtHandler::osc_char`] and then one
     /// [`VtHandler::osc_end`].
     #[inline(always)]
-    fn osc_start(&mut self, c: char) {
+    fn osc_start(&mut self, c: u8) {
         let _ = c;
         // Silently ignored by default.
     }
@@ -112,7 +112,7 @@ pub trait VtHandler {
     ///
     /// This only appears after an earlier call to [`VtHandler::osc_start`].
     #[inline(always)]
-    fn osc_end(&mut self, c: char) {
+    fn osc_end(&mut self, c: u8) {
         let _ = c;
         // Silently ignored by default.
     }
@@ -126,26 +126,26 @@ pub trait VtHandler {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VtEvent {
     Print(char),
-    ExecuteCtrl(char),
+    ExecuteCtrl(u8),
     DispatchCsi {
-        cmd: char,
+        cmd: u8,
         params: VtParams,
         intermediates: VtIntermediates,
     },
     DispatchEsc {
-        cmd: char,
+        cmd: u8,
         intermediates: VtIntermediates,
     },
     DcsStart {
-        cmd: char,
+        cmd: u8,
         params: VtParams,
         intermediates: VtIntermediates,
     },
     DcsChar(char),
-    DcsEnd(char),
-    OscStart(char),
+    DcsEnd(u8),
+    OscStart(u8),
     OscChar(char),
-    OscEnd(char),
+    OscEnd(u8),
     Error(char),
 }
 
@@ -172,12 +172,12 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     }
 
     #[inline(always)]
-    fn execute_ctrl(&mut self, c: char) {
+    fn execute_ctrl(&mut self, c: u8) {
         (self.f)(VtEvent::ExecuteCtrl(c));
     }
 
     #[inline(always)]
-    fn dispatch_csi(&mut self, cmd: char, params: &VtParams, intermediates: &VtIntermediates) {
+    fn dispatch_csi(&mut self, cmd: u8, params: &VtParams, intermediates: &VtIntermediates) {
         (self.f)(VtEvent::DispatchCsi {
             cmd,
             params: *params,
@@ -191,7 +191,7 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     }
 
     #[inline(always)]
-    fn dispatch_esc(&mut self, cmd: char, intermediates: &VtIntermediates) {
+    fn dispatch_esc(&mut self, cmd: u8, intermediates: &VtIntermediates) {
         (self.f)(VtEvent::DispatchEsc {
             cmd,
             intermediates: *intermediates,
@@ -199,7 +199,7 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     }
 
     #[inline(always)]
-    fn dcs_start(&mut self, cmd: char, params: &VtParams, intermediates: &VtIntermediates) {
+    fn dcs_start(&mut self, cmd: u8, params: &VtParams, intermediates: &VtIntermediates) {
         (self.f)(VtEvent::DcsStart {
             cmd,
             params: *params,
@@ -213,12 +213,12 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     }
 
     #[inline(always)]
-    fn dcs_end(&mut self, c: char) {
+    fn dcs_end(&mut self, c: u8) {
         (self.f)(VtEvent::DcsEnd(c));
     }
 
     #[inline(always)]
-    fn osc_start(&mut self, c: char) {
+    fn osc_start(&mut self, c: u8) {
         (self.f)(VtEvent::OscStart(c));
     }
 
@@ -228,7 +228,7 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     }
 
     #[inline(always)]
-    fn osc_end(&mut self, c: char) {
+    fn osc_end(&mut self, c: u8) {
         (self.f)(VtEvent::OscEnd(c));
     }
 }

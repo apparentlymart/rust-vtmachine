@@ -67,20 +67,20 @@ impl VtHandler for Handler {
         println!("print({c:?})");
     }
 
-    fn execute_ctrl(&mut self, c: char) {
+    fn execute_ctrl(&mut self, c: u8) {
         println!("execute_ctrl({c:?})");
     }
 
     fn dispatch_csi(
         &mut self,
-        cmd: char,
+        cmd: u8,
         params: &vtmachine::VtParams,
         intermediates: &vtmachine::VtIntermediates,
     ) {
         println!("dispatch_csi({cmd:?}, {params:?}, {intermediates:?})");
     }
 
-    fn dispatch_esc(&mut self, cmd: char, intermediates: &vtmachine::VtIntermediates) {
+    fn dispatch_esc(&mut self, cmd: u8, intermediates: &vtmachine::VtIntermediates) {
         println!("dispatch_esc({cmd:?}, {intermediates:?})");
     }
 
@@ -90,7 +90,7 @@ impl VtHandler for Handler {
 
     fn dcs_start(
         &mut self,
-        cmd: char,
+        cmd: u8,
         params: &vtmachine::VtParams,
         intermediates: &vtmachine::VtIntermediates,
     ) {
@@ -101,11 +101,11 @@ impl VtHandler for Handler {
         println!("dcs_char({c:?})");
     }
 
-    fn dcs_end(&mut self, c: char) {
+    fn dcs_end(&mut self, c: u8) {
         println!("dcs_end({c:?})");
     }
 
-    fn osc_start(&mut self, c: char) {
+    fn osc_start(&mut self, c: u8) {
         println!("osc_start({c:?})");
     }
 
@@ -113,7 +113,7 @@ impl VtHandler for Handler {
         println!("osc_char({c:?})");
     }
 
-    fn osc_end(&mut self, c: char) {
+    fn osc_end(&mut self, c: u8) {
         println!("osc_end({c:?})");
     }
 }

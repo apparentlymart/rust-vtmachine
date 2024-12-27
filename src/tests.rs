@@ -22,8 +22,8 @@ fn literal() {
             VtEvent::Print('r'),
             VtEvent::Print('l'),
             VtEvent::Print('d'),
-            VtEvent::ExecuteCtrl('\r'),
-            VtEvent::ExecuteCtrl('\n'),
+            VtEvent::ExecuteCtrl('\r' as u8),
+            VtEvent::ExecuteCtrl('\n' as u8),
             VtEvent::Print('b'),
             VtEvent::Print('o'),
             VtEvent::Print('o'),
@@ -46,7 +46,7 @@ fn format_csi() {
             VtEvent::Print('i'),
             VtEvent::Print('n'),
             VtEvent::DispatchCsi {
-                cmd: 'm',
+                cmd: 'm' as u8,
                 params: VtParams::from_slice(&[1]),
                 intermediates: VtIntermediates::new(),
             },
@@ -55,7 +55,7 @@ fn format_csi() {
             VtEvent::Print('l'),
             VtEvent::Print('d'),
             VtEvent::DispatchCsi {
-                cmd: 'p',
+                cmd: 'p' as u8,
                 params: VtParams::from_slice(&[2, 3]),
                 intermediates: VtIntermediates::new(),
             },
@@ -92,12 +92,12 @@ impl VtHandler for LogHandler {
     }
 
     #[inline(always)]
-    fn execute_ctrl(&mut self, c: char) {
+    fn execute_ctrl(&mut self, c: u8) {
         self.log.push(VtEvent::ExecuteCtrl(c));
     }
 
     #[inline(always)]
-    fn dispatch_csi(&mut self, cmd: char, params: &VtParams, intermediates: &VtIntermediates) {
+    fn dispatch_csi(&mut self, cmd: u8, params: &VtParams, intermediates: &VtIntermediates) {
         self.log.push(VtEvent::DispatchCsi {
             cmd,
             params: *params,

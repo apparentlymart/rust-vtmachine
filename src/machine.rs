@@ -316,18 +316,20 @@ impl<H: VtHandler> VtMachine<H> {
     fn action(&mut self, action: Action, c: char) {
         match action {
             Action::Print => self.handler.print(c),
-            Action::Execute => self.handler.execute_ctrl(c),
-            Action::Hook => self.handler.dcs_start(c, &self.params, &self.intermediates),
+            Action::Execute => self.handler.execute_ctrl(c as u8),
+            Action::Hook => self
+                .handler
+                .dcs_start(c as u8, &self.params, &self.intermediates),
             Action::Put => self.handler.dcs_char(c),
-            Action::OscStart => self.handler.osc_start(c),
+            Action::OscStart => self.handler.osc_start(c as u8),
             Action::OscPut => self.handler.osc_char(c),
-            Action::OscEnd => self.handler.osc_end(c),
-            Action::Unhook => self.handler.dcs_end(c),
+            Action::OscEnd => self.handler.osc_end(c as u8),
+            Action::Unhook => self.handler.dcs_end(c as u8),
             Action::CsiDispatch => {
                 self.handler
-                    .dispatch_csi(c, &self.params, &self.intermediates);
+                    .dispatch_csi(c as u8, &self.params, &self.intermediates);
             }
-            Action::EscDispatch => self.handler.dispatch_esc(c, &self.intermediates),
+            Action::EscDispatch => self.handler.dispatch_esc(c as u8, &self.intermediates),
             Action::None => {}
             Action::Collect => self.intermediates.push(c as u8),
             Action::Param => {
