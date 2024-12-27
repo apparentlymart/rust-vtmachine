@@ -1,5 +1,18 @@
 use crate::VtHandler;
 
+/// Virtual terminal state machine.
+///
+/// This is the main type in this crate, which takes Unicode scalar values (or strings thereof)
+/// and translates them into low-level events to be interpreted by a provided [`VtHandler`].
+///
+/// `VtMachine` implements a _Unicode-native_ terminal state machine that does not support
+/// any legacy character encodings. If working with a raw byte stream, such as from a
+/// pseudoterminal provided by the host OS, the caller must first interpret the bytes
+/// as UTF-8 sequences and provide the result to either [`VtMachine::write`] or
+/// [`VtMachine::write_char`], depending on the granularity of the UTF-8 interpretation.
+///
+/// This implementation is not suitable for emulating a legacy hardware video terminal
+/// that used switchable character sets.
 pub struct VtMachine<H> {
     handler: H,
     state: State,
@@ -8,6 +21,7 @@ pub struct VtMachine<H> {
 }
 
 impl<H> VtMachine<H> {
+    /// Constructs a new [`VtMachine`] that will deliver events to the given [`VtHandler`].
     pub const fn new(handler: H) -> Self {
         Self {
             handler,
@@ -17,16 +31,19 @@ impl<H> VtMachine<H> {
         }
     }
 
+    /// Returns a shared reference to the wrapped [`VtHandler`].
     #[inline(always)]
     pub const fn handler(&self) -> &H {
         &self.handler
     }
 
+    /// Returns a mutable reference to the wrapped [`VtHandler`].
     #[inline(always)]
     pub const fn handler_mut(&mut self) -> &mut H {
         &mut self.handler
     }
 
+    /// Consumes the [`VtMachine`] and returns ownership of its wrapped [`VtHandler`].
     #[inline(always)]
     pub fn take_handler(self) -> H {
         self.handler
@@ -34,12 +51,16 @@ impl<H> VtMachine<H> {
 }
 
 impl<H: VtHandler> VtMachine<H> {
+    /// Consumes each of the unicode scalar values in the given string, interpreting
+    /// any control characters to produce special events such as control sequences.
     pub fn write(&mut self, data: &str) {
         for c in data.chars() {
             self.write_char(c);
         }
     }
 
+    /// Consumes a single unicode scalar value given as a [`char`], in the same way
+    /// as [`Self::write`] would consume each scalar value its the given string.
     pub fn write_char(&mut self, c: char) {
         // Some characters have the same effect regardless of the current state.
         match c {
@@ -347,6 +368,7 @@ impl<H: VtHandler> VtMachine<H> {
 
     fn error(&mut self, c: char) {
         self.handler.error(c);
+        self.change_state(State::Literal, Action::None, c);
     }
 }
 
@@ -386,6 +408,7 @@ enum State {
     IgnoreUntilSt,
 }
 
+/// Zero or more `u16` values given as parameters in a control sequence, or similar.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct VtParams {
     buf: [u16; 16],
@@ -393,6 +416,7 @@ pub struct VtParams {
 }
 
 impl VtParams {
+    /// Constructs a new zero-length [`VtParams`].
     pub const fn new() -> Self {
         Self {
             buf: [0; 16],
@@ -400,6 +424,10 @@ impl VtParams {
         }
     }
 
+    /// Constructs a new [`VtParams`] containing the values in the given slice.
+    ///
+    /// A `VtParams` has a maximum capacity of 16 items, so this will panic if
+    /// the given slice has length 17 or greater.
     pub fn from_slice(from: &[u16]) -> Self {
         let mut ret = Self::new();
         if from.len() > ret.buf.len() {
@@ -410,6 +438,10 @@ impl VtParams {
         ret
     }
 
+    /// Attempts to push a new value.
+    ///
+    /// A [`VtParams`] has a capacity of 16 items, and so any pushes after
+    /// that capacity has been reached are silently ignored.
     pub fn push(&mut self, v: u16) {
         if self.len == self.buf.len() {
             return; // pushes beyond capacity are silently ignored
@@ -434,16 +466,19 @@ impl VtParams {
         }
     }
 
+    /// Discard all of the parameters, causing the object to then have length zero.
     #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
     }
 
+    /// Returns the parameter values as a slice of [`u16`] values.
     #[inline(always)]
     pub fn values(&self) -> &[u16] {
         &self.buf[..self.len]
     }
 
+    /// Returns the current number of parameters.
     #[inline(always)]
     pub const fn len(&self) -> usize {
         self.len
@@ -458,6 +493,8 @@ impl core::fmt::Debug for VtParams {
     }
 }
 
+/// Zero or more intermediate characters that appeared as part of an
+/// escape sequence.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct VtIntermediates {
     buf: [char; 2],
@@ -467,6 +504,7 @@ pub struct VtIntermediates {
 impl VtIntermediates {
     const OVERRUN_LEN: usize = 3;
 
+    /// Constructs a new zero-length [`VtIntermediates`].
     pub const fn new() -> Self {
         Self {
             buf: ['\0'; 2],
@@ -474,6 +512,10 @@ impl VtIntermediates {
         }
     }
 
+    /// Constructs a new [`VtIntermediates`] containing the values in the given slice.
+    ///
+    /// A `VtIntermediates` has a maximum capacity of two items, so this will panic if
+    /// the given slice has length three or greater.
     pub fn from_slice(from: &[char]) -> Self {
         let mut ret = Self::new();
         if from.len() > ret.buf.len() {
@@ -484,6 +526,10 @@ impl VtIntermediates {
         ret
     }
 
+    /// Attempts to push a new value.
+    ///
+    /// A [`VtParams`] has a capacity of two characters, and so any pushes after
+    /// that capacity has been reached are silently ignored.
     pub fn push(&mut self, c: char) {
         let len = self.len();
         if len >= self.buf.len() {
@@ -494,21 +540,27 @@ impl VtIntermediates {
         self.len += 1;
     }
 
+    /// Discard all of the intermediate characters, causing the object to then have
+    /// length zero.
     #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
     }
 
+    /// Returns the intermediate characters as a slice of [`char`] values.
     pub fn chars(&self) -> &[char] {
         let len = self.len();
         &self.buf[..len]
     }
 
+    /// Returns the current number of intermediate characters.
     #[inline(always)]
     pub fn len(&self) -> usize {
         core::cmp::min(self.buf.len(), self.len as usize)
     }
 
+    /// Returns true if callers have attempted to push more than two intermediate
+    /// characters, and thus subsequent characters have been discarded.
     #[inline(always)]
     pub const fn has_overrun(&self) -> bool {
         self.len as usize > self.buf.len()
