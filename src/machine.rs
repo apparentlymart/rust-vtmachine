@@ -412,7 +412,7 @@ enum State {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct VtParams {
     buf: [u16; 16],
-    len: usize,
+    len: u8,
 }
 
 impl VtParams {
@@ -433,7 +433,7 @@ impl VtParams {
         if from.len() > ret.buf.len() {
             panic!("too many params")
         }
-        ret.len = from.len();
+        ret.len = from.len() as u8;
         (&mut ret.buf[..from.len()]).copy_from_slice(from);
         ret
     }
@@ -443,10 +443,10 @@ impl VtParams {
     /// A [`VtParams`] has a capacity of 16 items, and so any pushes after
     /// that capacity has been reached are silently ignored.
     pub fn push(&mut self, v: u16) {
-        if self.len == self.buf.len() {
+        if (self.len as usize) == self.buf.len() {
             return; // pushes beyond capacity are silently ignored
         }
-        self.buf[self.len] = v;
+        self.buf[self.len as usize] = v;
         self.len += 1;
     }
 
@@ -459,7 +459,7 @@ impl VtParams {
             if self.len == 0 {
                 self.push(0); // start our first param
             }
-            let current = &mut self.buf[self.len - 1];
+            let current = &mut self.buf[(self.len as usize) - 1];
             let digit = (c as u16) - ('0' as u16);
             *current *= 10;
             *current += digit;
@@ -475,20 +475,20 @@ impl VtParams {
     /// Returns the parameter values as a slice of [`u16`] values.
     #[inline(always)]
     pub fn values(&self) -> &[u16] {
-        &self.buf[..self.len]
+        &self.buf[..(self.len as usize)]
     }
 
     /// Returns the current number of parameters.
     #[inline(always)]
     pub const fn len(&self) -> usize {
-        self.len
+        self.len as usize
     }
 }
 
 impl core::fmt::Debug for VtParams {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("VtParams")
-            .field(&&self.buf[..self.len])
+            .field(&&self.buf[..(self.len as usize)])
             .finish()
     }
 }
