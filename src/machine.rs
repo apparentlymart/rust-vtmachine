@@ -329,7 +329,7 @@ impl<H: VtHandler> VtMachine<H> {
             }
             Action::EscDispatch => self.handler.dispatch_esc(c, &self.intermediates),
             Action::None => {}
-            Action::Collect => self.intermediates.push(c),
+            Action::Collect => self.intermediates.push(c as u8),
             Action::Param => {
                 self.params.push_csi_char(c);
             }
@@ -497,7 +497,7 @@ impl core::fmt::Debug for VtParams {
 /// escape sequence.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct VtIntermediates {
-    buf: [char; 2],
+    buf: [u8; 2],
     len: u8, // greater than length of buf means overrun
 }
 
@@ -507,7 +507,7 @@ impl VtIntermediates {
     /// Constructs a new zero-length [`VtIntermediates`].
     pub const fn new() -> Self {
         Self {
-            buf: ['\0'; 2],
+            buf: [0; 2],
             len: 0,
         }
     }
@@ -516,7 +516,7 @@ impl VtIntermediates {
     ///
     /// A `VtIntermediates` has a maximum capacity of two items, so this will panic if
     /// the given slice has length three or greater.
-    pub fn from_slice(from: &[char]) -> Self {
+    pub fn from_slice(from: &[u8]) -> Self {
         let mut ret = Self::new();
         if from.len() > ret.buf.len() {
             panic!("too many intermediates")
@@ -530,7 +530,7 @@ impl VtIntermediates {
     ///
     /// A [`VtParams`] has a capacity of two characters, and so any pushes after
     /// that capacity has been reached are silently ignored.
-    pub fn push(&mut self, c: char) {
+    pub fn push(&mut self, c: u8) {
         let len = self.len();
         if len >= self.buf.len() {
             self.len = Self::OVERRUN_LEN as u8;
@@ -547,8 +547,8 @@ impl VtIntermediates {
         self.len = 0;
     }
 
-    /// Returns the intermediate characters as a slice of [`char`] values.
-    pub fn chars(&self) -> &[char] {
+    /// Returns the intermediate characters as a slice of [`u8`] values.
+    pub fn chars(&self) -> &[u8] {
         let len = self.len();
         &self.buf[..len]
     }
