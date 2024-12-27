@@ -3,5 +3,7 @@ name = "vtmachine"
 version = "0.1.0"
 edition = "2021"
 description = "State machine for VT100-like terminal data streams"
+license = "MIT"
+repository = "https://github.com/apparentlymart/rust-vtmachine"
 
 [dependencies]
