@@ -1,5 +1,6 @@
 use core::str;
 use std::io::{stdin, Read};
+use u8char::u8char;
 
 use vtmachine::{VtHandler, VtMachine};
 
@@ -63,7 +64,7 @@ fn main() -> Result<(), std::io::Error> {
 struct Handler;
 
 impl VtHandler for Handler {
-    fn print(&mut self, c: char) {
+    fn print(&mut self, c: u8char) {
         println!("print({c:?})");
     }
 
@@ -84,7 +85,7 @@ impl VtHandler for Handler {
         println!("dispatch_esc({cmd:?}, {intermediates:?})");
     }
 
-    fn error(&mut self, c: char) {
+    fn error(&mut self, c: u8char) {
         println!("error({c:?})");
     }
 
@@ -97,7 +98,7 @@ impl VtHandler for Handler {
         println!("dcs_start({cmd:?}, {params:?}, {intermediates:?})");
     }
 
-    fn dcs_char(&mut self, c: char) {
+    fn dcs_char(&mut self, c: u8char) {
         println!("dcs_char({c:?})");
     }
 
@@ -109,7 +110,7 @@ impl VtHandler for Handler {
         println!("osc_start({c:?})");
     }
 
-    fn osc_char(&mut self, c: char) {
+    fn osc_char(&mut self, c: u8char) {
         println!("osc_char({c:?})");
     }
 

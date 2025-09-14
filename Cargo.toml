@@ -1,9 +1,10 @@
 [package]
-name = "vtmachine"
-version = "0.1.0"
-edition = "2021"
 description = "State machine for VT100-like terminal data streams"
+edition = "2021"
 license = "MIT"
+name = "vtmachine"
 repository = "https://github.com/apparentlymart/rust-vtmachine"
+version = "0.1.0"
 
 [dependencies]
+u8char = "0.3.0"

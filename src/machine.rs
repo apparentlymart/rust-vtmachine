@@ -1,4 +1,5 @@
 use crate::VtHandler;
+use u8char::u8char;
 
 /// Virtual terminal state machine.
 ///
@@ -53,41 +54,52 @@ impl<H> VtMachine<H> {
 impl<H: VtHandler> VtMachine<H> {
     /// Consumes each of the unicode scalar values in the given string, interpreting
     /// any control characters to produce special events such as control sequences.
+    ///
+    /// Note that this requires the buffer to be [`str`], meaning it's assumed
+    /// to be valid UTF-8. If you're consuming a stream of [`u8`] then you
+    /// might instead consider using [`::u8char::stream::U8CharStream`] and
+    /// passing the [`u8char`] values that its iterators produce directly into
+    /// [`Self::write_u8char`]. (Note that `U8CharStream` is lossy when given
+    /// invalid UTF-8 as input, though.)
     pub fn write(&mut self, data: &str) {
-        for c in data.chars() {
-            self.write_char(c);
+        use ::u8char::AsU8Chars;
+        for c in data.u8chars() {
+            self.write_u8char(c);
         }
     }
 
-    /// Consumes a single unicode scalar value given as a [`char`], in the same way
-    /// as [`Self::write`] would consume each scalar value its the given string.
-    pub fn write_char(&mut self, c: char) {
+    /// Consumes a single unicode scalar value given as a [`u8char`], in the
+    /// same way as [`Self::write`] would consume each scalar value its the
+    /// given string.
+    pub fn write_u8char(&mut self, c: u8char) {
+        // All of the special state transitions and actions are triggered by
+        // bytes in the ASCII range, so we will match those based on only the
+        // first byte of the UTF-8 character. For values less than 128 these
+        // bytes will be the whole represented character, and we're not going
+        // to match any values >=128.
+        let fb = c.first_byte();
+
         // Some characters have the same effect regardless of the current state.
-        match c {
-            '\u{18}'
-            | '\u{1a}'
-            | '\u{80}'..='\u{8f}'
-            | '\u{91}'..='\u{97}'
-            | '\u{99}'
-            | '\u{9a}' => {
+        match fb {
+            b'\x18' | b'\x1a' | b'\x80'..=b'\x8f' | b'\x91'..=b'\x97' | b'\x99' | b'\x9a' => {
                 return self.change_state(State::Literal, Action::Execute, c);
             }
-            '\u{9c}' => {
+            b'\x9c' => {
                 return self.change_state(State::Literal, Action::None, c);
             }
-            '\u{1b}' => {
+            b'\x1b' => {
                 return self.change_state(State::Escape, Action::None, c);
             }
-            '\u{98}' | '\u{9e}' | '\u{9f}' => {
+            b'\x98' | b'\x9e' | b'\x9f' => {
                 return self.change_state(State::IgnoreUntilSt, Action::None, c);
             }
-            '\u{90}' => {
+            b'\x90' => {
                 return self.change_state(State::DevCtrlStart, Action::None, c);
             }
-            '\u{9d}' => {
+            b'\x9d' => {
                 return self.change_state(State::OsCmd, Action::None, c);
             }
-            '\u{9b}' => {
+            b'\x9b' => {
                 return self.change_state(State::CtrlStart, Action::None, c);
             }
             _ => {
@@ -98,214 +110,214 @@ impl<H: VtHandler> VtMachine<H> {
         // For any character that doesn't have a universal handling above,
         // we vary based on state.
         match self.state {
-            State::Literal => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' => {
+            State::Literal => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
                     return self.action(Action::Execute, c);
                 }
                 _ => return self.action(Action::Print, c),
             },
-            State::Escape => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' => {
+            State::Escape => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
                     return self.action(Action::Execute, c);
                 }
-                '\u{7f}' => {
+                b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{20}'..='\u{2f}' => {
+                b'\x20'..=b'\x2f' => {
                     return self.change_state(State::EscapeIntermediate, Action::Collect, c);
                 }
-                '\u{30}'..='\u{4f}'
-                | '\u{51}'..='\u{57}'
-                | '\u{59}'
-                | '\u{5a}'
-                | '\u{5c}'
-                | '\u{60}'..='\u{7e}' => {
+                b'\x30'..=b'\x4f'
+                | b'\x51'..=b'\x57'
+                | b'\x59'
+                | b'\x5a'
+                | b'\x5c'
+                | b'\x60'..=b'\x7e' => {
                     return self.change_state(State::Literal, Action::EscDispatch, c);
                 }
-                '\u{5b}' => {
+                b'\x5b' => {
                     return self.change_state(State::CtrlStart, Action::None, c);
                 }
-                '\u{5d}' => {
+                b'\x5d' => {
                     return self.change_state(State::OsCmd, Action::None, c);
                 }
-                '\u{50}' => {
+                b'\x50' => {
                     return self.change_state(State::DevCtrlStart, Action::None, c);
                 }
-                '\u{58}' | '\u{5e}' | '\u{5f}' => {
+                b'\x58' | b'\x5e' | b'\x5f' => {
                     return self.change_state(State::IgnoreUntilSt, Action::None, c);
                 }
                 _ => return self.error(c),
             },
-            State::EscapeIntermediate => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' => {
+            State::EscapeIntermediate => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
                     return self.action(Action::Execute, c);
                 }
-                '\u{7f}' => {
+                b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{20}'..='\u{2f}' => {
+                b'\x20'..=b'\x2f' => {
                     return self.action(Action::Collect, c);
                 }
-                '\u{30}'..='\u{7e}' => {
+                b'\x30'..=b'\x7e' => {
                     return self.change_state(State::Literal, Action::EscDispatch, c);
                 }
                 _ => return self.error(c),
             },
-            State::CtrlStart => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' => {
+            State::CtrlStart => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
                     return self.action(Action::Execute, c);
                 }
-                '\u{7f}' => {
+                b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{20}'..='\u{2f}' => {
+                b'\x20'..=b'\x2f' => {
                     return self.change_state(State::CtrlIntermediate, Action::Collect, c);
                 }
-                '\u{3a}' => {
+                b'\x3a' => {
                     return self.change_state(State::CtrlMalformed, Action::None, c);
                 }
-                '\u{30}'..='\u{39}' | '\u{3b}' => {
+                b'\x30'..=b'\x39' | b'\x3b' => {
                     return self.change_state(State::CtrlParam, Action::Param, c);
                 }
-                '\u{3c}'..='\u{3f}' => {
+                b'\x3c'..=b'\x3f' => {
                     return self.change_state(State::CtrlParam, Action::Collect, c);
                 }
-                '\u{40}'..='\u{7e}' => {
+                b'\x40'..=b'\x7e' => {
                     return self.change_state(State::Literal, Action::CsiDispatch, c);
                 }
                 _ => return self.error(c),
             },
-            State::CtrlParam => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' => {
+            State::CtrlParam => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
                     return self.action(Action::Execute, c);
                 }
-                '\u{30}'..='\u{39}' | '\u{3b}' => {
+                b'\x30'..=b'\x39' | b'\x3b' => {
                     return self.action(Action::Param, c);
                 }
-                '\u{7f}' => {
+                b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{3a}' | '\u{3c}'..='\u{3f}' => {
+                b'\x3a' | b'\x3c'..=b'\x3f' => {
                     return self.change_state(State::CtrlMalformed, Action::None, c);
                 }
-                '\u{20}'..='\u{2f}' => {
+                b'\x20'..=b'\x2f' => {
                     return self.change_state(State::CtrlIntermediate, Action::Collect, c);
                 }
-                '\u{40}'..='\u{7e}' => {
+                b'\x40'..=b'\x7e' => {
                     return self.change_state(State::Literal, Action::CsiDispatch, c);
                 }
                 _ => return self.error(c),
             },
-            State::CtrlIntermediate => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' => {
+            State::CtrlIntermediate => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
                     return self.action(Action::Execute, c);
                 }
-                '\u{20}'..='\u{2f}' => {
+                b'\x20'..=b'\x2f' => {
                     return self.action(Action::Collect, c);
                 }
-                '\u{7f}' => {
+                b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{3a}' | '\u{3c}'..='\u{3f}' => {
+                b'\x3a' | b'\x3c'..=b'\x3f' => {
                     return self.change_state(State::CtrlMalformed, Action::None, c);
                 }
-                '\u{40}'..='\u{7e}' => {
+                b'\x40'..=b'\x7e' => {
                     return self.change_state(State::Literal, Action::CsiDispatch, c);
                 }
                 _ => return self.error(c),
             },
-            State::CtrlMalformed => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' => {
+            State::CtrlMalformed => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
                     return self.action(Action::Execute, c);
                 }
-                '\u{20}'..='\u{3f}' | '\u{7f}' => {
+                b'\x20'..=b'\x3f' | b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{40}'..='\u{7e}' => {
+                b'\x40'..=b'\x7e' => {
                     return self.change_state(State::Literal, Action::None, c);
                 }
                 _ => return self.error(c),
             },
-            State::DevCtrlStart => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' | '\u{7f}' => {
+            State::DevCtrlStart => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{3a}' => {
+                b'\x3a' => {
                     return self.change_state(State::DevCtrlMalformed, Action::None, c);
                 }
-                '\u{20}'..='\u{2f}' => {
+                b'\x20'..=b'\x2f' => {
                     return self.change_state(State::DevCtrlIntermediate, Action::Collect, c);
                 }
-                '\u{30}'..='\u{39}' | '\u{3b}' => {
+                b'\x30'..=b'\x39' | b'\x3b' => {
                     return self.change_state(State::DevCtrlParam, Action::Param, c);
                 }
-                '\u{3c}'..='\u{3f}' => {
+                b'\x3c'..=b'\x3f' => {
                     return self.change_state(State::DevCtrlParam, Action::Collect, c);
                 }
-                '\u{40}'..='\u{7e}' => {
+                b'\x40'..=b'\x7e' => {
                     return self.change_state(State::DevCtrlPassthru, Action::None, c);
                 }
                 _ => return self.error(c),
             },
-            State::DevCtrlParam => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' | '\u{7f}' => {
+            State::DevCtrlParam => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{30}'..='\u{39}' | '\u{3b}' => {
+                b'\x30'..=b'\x39' | b'\x3b' => {
                     return self.action(Action::Param, c);
                 }
-                '\u{3a}' | '\u{3c}'..='\u{3f}' => {
+                b'\x3a' | b'\x3c'..=b'\x3f' => {
                     return self.change_state(State::DevCtrlMalformed, Action::None, c);
                 }
-                '\u{20}'..='\u{2f}' => {
+                b'\x20'..=b'\x2f' => {
                     return self.change_state(State::DevCtrlIntermediate, Action::Collect, c);
                 }
-                '\u{40}'..='\u{7e}' => {
+                b'\x40'..=b'\x7e' => {
                     return self.change_state(State::DevCtrlPassthru, Action::None, c);
                 }
                 _ => return self.error(c),
             },
-            State::DevCtrlIntermediate => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' | '\u{7f}' => {
+            State::DevCtrlIntermediate => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x7f' => {
                     return; // Ignored
                 }
-                '\u{20}'..='\u{2f}' => {
+                b'\x20'..=b'\x2f' => {
                     return self.action(Action::Collect, c);
                 }
-                '\u{30}'..='\u{3f}' => {
+                b'\x30'..=b'\x3f' => {
                     return self.change_state(State::DevCtrlMalformed, Action::None, c);
                 }
-                '\u{40}'..='\u{7e}' => {
+                b'\x40'..=b'\x7e' => {
                     return self.change_state(State::DevCtrlPassthru, Action::None, c);
                 }
                 _ => return self.error(c),
             },
-            State::DevCtrlPassthru => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' | '\u{20}'..='\u{7e}' => {
+            State::DevCtrlPassthru => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x20'..=b'\x7e' => {
                     return self.action(Action::Put, c);
                 }
-                '\u{7f}' => {
+                b'\x7f' => {
                     return; // Ignored
                 }
                 _ => return self.error(c),
             },
-            State::DevCtrlMalformed => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' | '\u{20}'..='\u{7f}' => {
+            State::DevCtrlMalformed => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x20'..=b'\x7f' => {
                     return; // Ignored
                 }
                 _ => return self.error(c),
             },
-            State::OsCmd => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' => {
+            State::OsCmd => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
                     return; // Ignored
                 }
-                '\u{20}'..='\u{7f}' => {
+                b'\x20'..=b'\x7f' => {
                     return self.action(Action::OscPut, c);
                 }
                 _ => return self.error(c),
             },
-            State::IgnoreUntilSt => match c {
-                '\u{00}'..='\u{17}' | '\u{19}' | '\u{1c}'..='\u{1f}' | '\u{20}'..='\u{7f}' => {
+            State::IgnoreUntilSt => match fb {
+                b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x20'..=b'\x7f' => {
                     return; // Ignored
                 }
                 _ => return self.error(c),
@@ -313,25 +325,40 @@ impl<H: VtHandler> VtMachine<H> {
         }
     }
 
-    fn action(&mut self, action: Action, c: char) {
+    /// Consumes a single unicode scalar value given as a [`char`], in the same way
+    /// as [`Self::write`] would consume each scalar value its the given string.
+    ///
+    /// Note that [`VtMachine`] uses [`u8char`] as its primary representation
+    /// of characters, and so this function is really just converting the given
+    /// `char` to `u8char` and then passing it to [`Self::write_u8char`]. If
+    /// you already have a `u8char` value then it's better to use the other
+    /// function directly.
+    pub fn write_char(&mut self, c: char) {
+        self.write_u8char(u8char::from_char(c))
+    }
+
+    fn action(&mut self, action: Action, c: u8char) {
         match action {
             Action::Print => self.handler.print(c),
-            Action::Execute => self.handler.execute_ctrl(c as u8),
-            Action::Hook => self
-                .handler
-                .dcs_start(c as u8, &self.params, &self.intermediates),
+            Action::Execute => self.handler.execute_ctrl(c.first_byte()),
+            Action::Hook => {
+                self.handler
+                    .dcs_start(c.first_byte(), &self.params, &self.intermediates)
+            }
             Action::Put => self.handler.dcs_char(c),
-            Action::OscStart => self.handler.osc_start(c as u8),
+            Action::OscStart => self.handler.osc_start(c.first_byte()),
             Action::OscPut => self.handler.osc_char(c),
-            Action::OscEnd => self.handler.osc_end(c as u8),
-            Action::Unhook => self.handler.dcs_end(c as u8),
+            Action::OscEnd => self.handler.osc_end(c.first_byte()),
+            Action::Unhook => self.handler.dcs_end(c.first_byte()),
             Action::CsiDispatch => {
                 self.handler
-                    .dispatch_csi(c as u8, &self.params, &self.intermediates);
+                    .dispatch_csi(c.first_byte(), &self.params, &self.intermediates);
             }
-            Action::EscDispatch => self.handler.dispatch_esc(c as u8, &self.intermediates),
+            Action::EscDispatch => self
+                .handler
+                .dispatch_esc(c.first_byte(), &self.intermediates),
             Action::None => {}
-            Action::Collect => self.intermediates.push(c as u8),
+            Action::Collect => self.intermediates.push(c.first_byte()),
             Action::Param => {
                 self.params.push_csi_char(c);
             }
@@ -342,14 +369,14 @@ impl<H: VtHandler> VtMachine<H> {
         }
     }
 
-    fn change_state(&mut self, state: State, transition: Action, c: char) {
+    fn change_state(&mut self, state: State, transition: Action, c: u8char) {
         self.state_exit_actions(self.state, c);
         self.state = state;
         self.action(transition, c);
         self.state_entry_actions(state, c);
     }
 
-    fn state_entry_actions(&mut self, state: State, c: char) {
+    fn state_entry_actions(&mut self, state: State, c: u8char) {
         match state {
             State::Escape => self.action(Action::Clear, c),
             State::CtrlStart => self.action(Action::Clear, c),
@@ -360,7 +387,7 @@ impl<H: VtHandler> VtMachine<H> {
         }
     }
 
-    fn state_exit_actions(&mut self, state: State, c: char) {
+    fn state_exit_actions(&mut self, state: State, c: u8char) {
         match state {
             State::OsCmd => self.action(Action::OscEnd, c),
             State::DevCtrlPassthru => self.action(Action::Unhook, c),
@@ -368,7 +395,7 @@ impl<H: VtHandler> VtMachine<H> {
         }
     }
 
-    fn error(&mut self, c: char) {
+    fn error(&mut self, c: u8char) {
         self.handler.error(c);
         self.change_state(State::Literal, Action::None, c);
     }
@@ -452,8 +479,8 @@ impl VtParams {
         self.len += 1;
     }
 
-    fn push_csi_char(&mut self, c: char) {
-        if c == ';' {
+    fn push_csi_char(&mut self, c: u8char) {
+        if c.first_byte() == b';' {
             // Argument separator, so we start a new param.
             self.push(0);
         } else {
@@ -462,7 +489,7 @@ impl VtParams {
                 self.push(0); // start our first param
             }
             let current = &mut self.buf[(self.len as usize) - 1];
-            let digit = (c as u16) - ('0' as u16);
+            let digit = (c.to_char() as u16) - ('0' as u16);
             *current *= 10;
             *current += digit;
         }

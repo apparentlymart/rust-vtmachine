@@ -2,6 +2,13 @@ use super::*;
 
 extern crate std;
 use std::vec::Vec;
+use u8char::u8char;
+
+macro_rules! print_event {
+    ($c:literal) => {
+        VtEvent::Print(u8char::from_char($c))
+    };
+}
 
 #[test]
 fn literal() {
@@ -11,23 +18,23 @@ fn literal() {
     assert_eq!(
         log,
         &[
-            VtEvent::Print('h'),
-            VtEvent::Print('e'),
-            VtEvent::Print('l'),
-            VtEvent::Print('l'),
-            VtEvent::Print('o'),
-            VtEvent::Print(' '),
-            VtEvent::Print('w'),
-            VtEvent::Print('o'),
-            VtEvent::Print('r'),
-            VtEvent::Print('l'),
-            VtEvent::Print('d'),
+            print_event!('h'),
+            print_event!('e'),
+            print_event!('l'),
+            print_event!('l'),
+            print_event!('o'),
+            print_event!(' '),
+            print_event!('w'),
+            print_event!('o'),
+            print_event!('r'),
+            print_event!('l'),
+            print_event!('d'),
             VtEvent::ExecuteCtrl('\r' as u8),
             VtEvent::ExecuteCtrl('\n' as u8),
-            VtEvent::Print('b'),
-            VtEvent::Print('o'),
-            VtEvent::Print('o'),
-            VtEvent::Print('p'),
+            print_event!('b'),
+            print_event!('o'),
+            print_event!('o'),
+            print_event!('p'),
         ]
     );
 }
@@ -40,29 +47,66 @@ fn format_csi() {
     assert_eq!(
         log,
         &[
-            VtEvent::Print('p'),
-            VtEvent::Print('l'),
-            VtEvent::Print('a'),
-            VtEvent::Print('i'),
-            VtEvent::Print('n'),
+            print_event!('p'),
+            print_event!('l'),
+            print_event!('a'),
+            print_event!('i'),
+            print_event!('n'),
             VtEvent::DispatchCsi {
                 cmd: 'm' as u8,
                 params: VtParams::from_slice(&[1]),
                 intermediates: VtIntermediates::new(),
             },
-            VtEvent::Print('b'),
-            VtEvent::Print('o'),
-            VtEvent::Print('l'),
-            VtEvent::Print('d'),
+            print_event!('b'),
+            print_event!('o'),
+            print_event!('l'),
+            print_event!('d'),
             VtEvent::DispatchCsi {
                 cmd: 'p' as u8,
                 params: VtParams::from_slice(&[2, 3]),
                 intermediates: VtIntermediates::new(),
             },
-            VtEvent::Print('m'),
-            VtEvent::Print('o'),
-            VtEvent::Print('r'),
-            VtEvent::Print('e'),
+            print_event!('m'),
+            print_event!('o'),
+            print_event!('r'),
+            print_event!('e'),
+        ]
+    );
+}
+
+#[test]
+fn through_u8char_stream() {
+    // The docs for `VtMachine::write` recommend using
+    // `u8char::stream::U8CharStream` to consume a stream of UTF-8 bytes
+    // like what might arrive through a pseudoterminal device, so this
+    // is a simple test making sure that idea keeps working.
+    let mut m = testing_machine();
+    let mut stream = ::u8char::stream::U8CharStream::new();
+    for c in stream.more(b"a\x1b[1m\xe2\x9d\x9e\x1b[0m\x9dc\xe2") {
+        m.write_u8char(c);
+    }
+    for c in stream.end() {
+        m.write_u8char(c);
+    }
+    let log = m.handler().log();
+    assert_eq!(
+        log,
+        &[
+            print_event!('a'),
+            VtEvent::DispatchCsi {
+                cmd: 'm' as u8,
+                params: VtParams::from_slice(&[1]),
+                intermediates: VtIntermediates::new(),
+            },
+            print_event!('❞'),
+            VtEvent::DispatchCsi {
+                cmd: 'm' as u8,
+                params: VtParams::from_slice(&[0]),
+                intermediates: VtIntermediates::new(),
+            },
+            print_event!('\u{FFFD}'),
+            print_event!('c'),
+            print_event!('\u{FFFD}'),
         ]
     );
 }
@@ -87,7 +131,7 @@ impl LogHandler {
 
 impl VtHandler for LogHandler {
     #[inline(always)]
-    fn print(&mut self, c: char) {
+    fn print(&mut self, c: u8char) {
         self.log.push(VtEvent::Print(c));
     }
 
@@ -106,7 +150,7 @@ impl VtHandler for LogHandler {
     }
 
     #[inline(always)]
-    fn error(&mut self, c: char) {
+    fn error(&mut self, c: u8char) {
         self.log.push(VtEvent::Error(c));
     }
 }

@@ -21,6 +21,7 @@
 //!
 //! ```rust
 //! # use vtmachine::{VtEvent, VtMachine, VtParams, VtIntermediates, vt_handler_fn};
+//! # use u8char::u8char;
 //! # let mut evts: Vec<VtEvent> = Vec::new();
 //! let mut machine = VtMachine::new(vt_handler_fn(|event| {
 //!     println!("{event:?}");
@@ -29,16 +30,16 @@
 //! machine.write("\x1b[2J\x1b[1;1HHello!\r\n");
 //! # drop(machine);
 //! # assert_eq!(&evts[..], &[
-//! #    VtEvent::DispatchCsi { cmd: 'J' as u8, params: VtParams::from_slice(&[2]), intermediates: VtIntermediates::new() },
-//! #    VtEvent::DispatchCsi { cmd: 'H' as u8, params: VtParams::from_slice(&[1, 1]), intermediates: VtIntermediates::new() },
-//! #    VtEvent::Print('H'),
-//! #    VtEvent::Print('e'),
-//! #    VtEvent::Print('l'),
-//! #    VtEvent::Print('l'),
-//! #    VtEvent::Print('o'),
-//! #    VtEvent::Print('!'),
-//! #    VtEvent::ExecuteCtrl('\r' as u8),
-//! #    VtEvent::ExecuteCtrl('\n' as u8),
+//! #    VtEvent::DispatchCsi { cmd: b'J', params: VtParams::from_slice(&[2]), intermediates: VtIntermediates::new() },
+//! #    VtEvent::DispatchCsi { cmd: b'H', params: VtParams::from_slice(&[1, 1]), intermediates: VtIntermediates::new() },
+//! #    VtEvent::Print(u8char::from_char('H')),
+//! #    VtEvent::Print(u8char::from_char('e')),
+//! #    VtEvent::Print(u8char::from_char('l')),
+//! #    VtEvent::Print(u8char::from_char('l')),
+//! #    VtEvent::Print(u8char::from_char('o')),
+//! #    VtEvent::Print(u8char::from_char('!')),
+//! #    VtEvent::ExecuteCtrl(b'\r'),
+//! #    VtEvent::ExecuteCtrl(b'\n'),
 //! # ]);
 //! ```
 //!

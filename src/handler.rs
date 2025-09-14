@@ -1,4 +1,5 @@
 use crate::{VtIntermediates, VtParams};
+use u8char::u8char;
 
 /// Trait for implementations that can process events from a [`crate::VtMachine`].
 ///
@@ -10,7 +11,7 @@ pub trait VtHandler {
     /// into [grapheme clusters](https://www.unicode.org/reports/tr29/#Grapheme_Cluster_Boundaries),
     /// that must be handled by the implementation itself.
     #[inline(always)]
-    fn print(&mut self, c: char) {
+    fn print(&mut self, c: u8char) {
         let _ = c;
         // Silently ignored by default.
     }
@@ -53,7 +54,7 @@ pub trait VtHandler {
     /// valid to appear at the current state. It's up to the implementation how to handle
     /// such characters, if at all.
     #[inline(always)]
-    fn error(&mut self, c: char) {
+    fn error(&mut self, c: u8char) {
         let _ = c;
         // Silently ignores errors by default.
     }
@@ -74,7 +75,7 @@ pub trait VtHandler {
     /// This is only called when there has been a previous [`VtHandler::dcs_start`] that
     /// has not yet been closed by a [`VtHandler::dcs_end`].
     #[inline(always)]
-    fn dcs_char(&mut self, c: char) {
+    fn dcs_char(&mut self, c: u8char) {
         let _ = c;
         // Silently ignored by default.
     }
@@ -103,7 +104,7 @@ pub trait VtHandler {
     /// This is only called when there has been a previous [`VtHandler::osc_start`] that
     /// has not yet been closed by a [`VtHandler::osc_end`].
     #[inline(always)]
-    fn osc_char(&mut self, c: char) {
+    fn osc_char(&mut self, c: u8char) {
         let _ = c;
         // Silently ignored by default.
     }
@@ -125,7 +126,7 @@ pub trait VtHandler {
 /// are owned and independent of the lifetime of any [`crate::VtMachine`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VtEvent {
-    Print(char),
+    Print(u8char),
     ExecuteCtrl(u8),
     DispatchCsi {
         cmd: u8,
@@ -141,12 +142,12 @@ pub enum VtEvent {
         params: VtParams,
         intermediates: VtIntermediates,
     },
-    DcsChar(char),
+    DcsChar(u8char),
     DcsEnd(u8),
     OscStart(u8),
-    OscChar(char),
+    OscChar(u8char),
     OscEnd(u8),
-    Error(char),
+    Error(u8char),
 }
 
 /// Returns a [`VtHandler`] that calls the given function for each
@@ -167,7 +168,7 @@ struct VtHandlerFn<F> {
 
 impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     #[inline(always)]
-    fn print(&mut self, c: char) {
+    fn print(&mut self, c: u8char) {
         (self.f)(VtEvent::Print(c));
     }
 
@@ -186,7 +187,7 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     }
 
     #[inline(always)]
-    fn error(&mut self, c: char) {
+    fn error(&mut self, c: u8char) {
         (self.f)(VtEvent::Error(c));
     }
 
@@ -208,7 +209,7 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     }
 
     #[inline(always)]
-    fn dcs_char(&mut self, c: char) {
+    fn dcs_char(&mut self, c: u8char) {
         (self.f)(VtEvent::DcsChar(c));
     }
 
@@ -223,7 +224,7 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     }
 
     #[inline(always)]
-    fn osc_char(&mut self, c: char) {
+    fn osc_char(&mut self, c: u8char) {
         (self.f)(VtEvent::OscChar(c));
     }
 

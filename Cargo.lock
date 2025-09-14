@@ -3,5 +3,14 @@
 version = 4
 
 [[package]]
+name = "u8char"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80c9ab3fbaee4da7257c86c9523d1bb5541bd1e84707e16ed7d713955b25afe5"
+
+[[package]]
 name = "vtmachine"
 version = "0.1.0"
+dependencies = [
+ "u8char",
+]
