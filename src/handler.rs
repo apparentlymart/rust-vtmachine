@@ -9,10 +9,24 @@ pub trait VtHandler {
     ///
     /// For a terminal implementation that wants to combine individual scalar values
     /// into [grapheme clusters](https://www.unicode.org/reports/tr29/#Grapheme_Cluster_Boundaries),
-    /// that must be handled by the implementation itself.
+    /// that must be handled by the implementation itself, but
+    /// [`VtHandler::print_end`] might be useful for detecting the end of a run
+    /// of literal text and therefore effectively an "end of text" condition
+    /// for the grapheme clustering algorithm.
     #[inline(always)]
     fn print(&mut self, c: u8char) {
         let _ = c;
+        // Silently ignored by default.
+    }
+
+    /// Marks the end of a series of at least one call to [`VtHandler::print`]
+    /// just before a call to one of the other non-literal-printing methods.
+    ///
+    /// This is intended as an aid to handlers that are implementing grapheme
+    /// cluster segmentation, where the end of each run of literal text should
+    /// be treated as "end of text" in the clustering algorithm.
+    #[inline(always)]
+    fn print_end(&mut self) {
         // Silently ignored by default.
     }
 
@@ -124,9 +138,11 @@ pub trait VtHandler {
 /// Each variant corresponds to a method of [`VtHandler`]. Unlike when implementing
 /// `VtHandler` directly, all provided [`VtParams`] and [`VtIntermediates`] values
 /// are owned and independent of the lifetime of any [`crate::VtMachine`].
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VtEvent {
     Print(u8char),
+    PrintEnd,
     ExecuteCtrl(u8),
     DispatchCsi {
         cmd: u8,
@@ -170,6 +186,11 @@ impl<F: FnMut(VtEvent)> VtHandler for VtHandlerFn<F> {
     #[inline(always)]
     fn print(&mut self, c: u8char) {
         (self.f)(VtEvent::Print(c));
+    }
+
+    #[inline(always)]
+    fn print_end(&mut self) {
+        (self.f)(VtEvent::PrintEnd);
     }
 
     #[inline(always)]

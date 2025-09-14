@@ -38,6 +38,7 @@
 //! #    VtEvent::Print(u8char::from_char('l')),
 //! #    VtEvent::Print(u8char::from_char('o')),
 //! #    VtEvent::Print(u8char::from_char('!')),
+//! #    VtEvent::PrintEnd,
 //! #    VtEvent::ExecuteCtrl(b'\r'),
 //! #    VtEvent::ExecuteCtrl(b'\n'),
 //! # ]);
@@ -52,6 +53,7 @@
 //! Print('l')
 //! Print('o')
 //! Print('!')
+//! PrintEnd
 //! ExecuteCtrl('\r')
 //! ExecuteCtrl('\n')
 //! ```

@@ -19,6 +19,7 @@ pub struct VtMachine<H> {
     state: State,
     intermediates: VtIntermediates,
     params: VtParams,
+    in_literal_chunk: bool,
 }
 
 impl<H> VtMachine<H> {
@@ -29,6 +30,7 @@ impl<H> VtMachine<H> {
             state: State::Literal,
             intermediates: VtIntermediates::new(),
             params: VtParams::new(),
+            in_literal_chunk: false,
         }
     }
 
@@ -337,7 +339,32 @@ impl<H: VtHandler> VtMachine<H> {
         self.write_u8char(u8char::from_char(c))
     }
 
+    /// Tells the [`VtMachine`] that no more bytes are expected, such as if
+    /// the stream that the data is arriving from is closed from the writer
+    /// end.
+    ///
+    /// This notifies the handler of the end of any currently-active literal
+    /// chunk and then resets the machine back to its initial state. It's
+    /// okay to keep using the [`VtMachine`] after calling this function, but
+    /// any subsequent character written will be treated as if it is the first
+    /// character in a new stream.
+    pub fn write_end(&mut self) {
+        if self.in_literal_chunk {
+            self.in_literal_chunk = false;
+            self.handler.print_end();
+        }
+        self.state = State::Literal;
+        self.intermediates.clear();
+        self.params.clear();
+    }
+
     fn action(&mut self, action: Action, c: u8char) {
+        if matches!(action, Action::Print) {
+            self.in_literal_chunk = true;
+        } else if self.in_literal_chunk {
+            self.in_literal_chunk = false;
+            self.handler.print_end();
+        }
         match action {
             Action::Print => self.handler.print(c),
             Action::Execute => self.handler.execute_ctrl(c.first_byte()),

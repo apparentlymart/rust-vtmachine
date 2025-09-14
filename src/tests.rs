@@ -29,6 +29,7 @@ fn literal() {
             print_event!('r'),
             print_event!('l'),
             print_event!('d'),
+            VtEvent::PrintEnd,
             VtEvent::ExecuteCtrl('\r' as u8),
             VtEvent::ExecuteCtrl('\n' as u8),
             print_event!('b'),
@@ -52,6 +53,7 @@ fn format_csi() {
             print_event!('a'),
             print_event!('i'),
             print_event!('n'),
+            VtEvent::PrintEnd,
             VtEvent::DispatchCsi {
                 cmd: 'm' as u8,
                 params: VtParams::from_slice(&[1]),
@@ -61,6 +63,7 @@ fn format_csi() {
             print_event!('o'),
             print_event!('l'),
             print_event!('d'),
+            VtEvent::PrintEnd,
             VtEvent::DispatchCsi {
                 cmd: 'p' as u8,
                 params: VtParams::from_slice(&[2, 3]),
@@ -88,17 +91,20 @@ fn through_u8char_stream() {
     for c in stream.end() {
         m.write_u8char(c);
     }
+    m.write_end();
     let log = m.handler().log();
     assert_eq!(
         log,
         &[
             print_event!('a'),
+            VtEvent::PrintEnd,
             VtEvent::DispatchCsi {
                 cmd: 'm' as u8,
                 params: VtParams::from_slice(&[1]),
                 intermediates: VtIntermediates::new(),
             },
             print_event!('❞'),
+            VtEvent::PrintEnd,
             VtEvent::DispatchCsi {
                 cmd: 'm' as u8,
                 params: VtParams::from_slice(&[0]),
@@ -107,6 +113,7 @@ fn through_u8char_stream() {
             print_event!('\u{FFFD}'),
             print_event!('c'),
             print_event!('\u{FFFD}'),
+            VtEvent::PrintEnd,
         ]
     );
 }
@@ -133,6 +140,11 @@ impl VtHandler for LogHandler {
     #[inline(always)]
     fn print(&mut self, c: u8char) {
         self.log.push(VtEvent::Print(c));
+    }
+
+    #[inline(always)]
+    fn print_end(&mut self) {
+        self.log.push(VtEvent::PrintEnd);
     }
 
     #[inline(always)]
