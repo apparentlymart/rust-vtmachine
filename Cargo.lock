@@ -10,7 +10,7 @@ checksum = "80c9ab3fbaee4da7257c86c9523d1bb5541bd1e84707e16ed7d713955b25afe5"
 
 [[package]]
 name = "vtmachine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "u8char",
 ]
