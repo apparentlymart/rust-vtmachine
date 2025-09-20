@@ -362,20 +362,20 @@ impl VtMachine {
             Action::Execute => Some(VtEvent::ExecuteCtrl(c.first_byte())),
             Action::Hook => Some(VtEvent::DcsStart {
                 cmd: c.first_byte(),
-                params: &self.params,
-                intermediates: &self.intermediates,
+                params: &self.params.values(),
+                intermediates: &self.intermediates.chars(),
             }),
             Action::Put => Some(VtEvent::DcsChar(c)),
             Action::OscStart => Some(VtEvent::OscStart(c.first_byte())),
             Action::OscPut => Some(VtEvent::OscChar(c)),
             Action::CsiDispatch => Some(VtEvent::DispatchCsi {
                 cmd: c.first_byte(),
-                params: &self.params,
-                intermediates: &self.intermediates,
+                params: &self.params.values(),
+                intermediates: &self.intermediates.chars(),
             }),
             Action::EscDispatch => Some(VtEvent::DispatchEsc {
                 cmd: c.first_byte(),
-                intermediates: &self.intermediates,
+                intermediates: &self.intermediates.chars(),
             }),
             Action::None => None,
             Action::Collect => None,
@@ -520,13 +520,13 @@ pub enum VtEvent<'m> {
         /// to perform.
         cmd: u8,
         /// The semicolon-separated integer parameters.
-        params: &'m VtParams,
+        params: &'m [u16],
         /// Any intermediate characters that appeared inside the sequence.
-        intermediates: &'m VtIntermediates,
+        intermediates: &'m [u8],
     },
     DispatchEsc {
         cmd: u8,
-        intermediates: &'m VtIntermediates,
+        intermediates: &'m [u8],
     },
     /// Reports the beginning of a device control string.
     ///
@@ -534,8 +534,8 @@ pub enum VtEvent<'m> {
     /// and then one [`VtEvent::DcsEnd`], when the input stream is valid.
     DcsStart {
         cmd: u8,
-        params: &'m VtParams,
-        intermediates: &'m VtIntermediates,
+        params: &'m [u16],
+        intermediates: &'m [u8],
     },
     /// Reports a literal character from within the "data string" portion of
     /// a device control string sequence.
@@ -595,7 +595,7 @@ enum State {
 
 /// Zero or more `u16` values given as parameters in a control sequence, or similar.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct VtParams {
+struct VtParams {
     buf: [u16; 16],
     len: u8,
 }
@@ -607,20 +607,6 @@ impl VtParams {
             buf: [0; 16],
             len: 0,
         }
-    }
-
-    /// Constructs a new [`VtParams`] containing the values in the given slice.
-    ///
-    /// A `VtParams` has a maximum capacity of 16 items, so this will panic if
-    /// the given slice has length 17 or greater.
-    pub fn from_slice(from: &[u16]) -> Self {
-        let mut ret = Self::new();
-        if from.len() > ret.buf.len() {
-            panic!("too many params")
-        }
-        ret.len = from.len() as u8;
-        (&mut ret.buf[..from.len()]).copy_from_slice(from);
-        ret
     }
 
     /// Attempts to push a new value.
@@ -662,12 +648,6 @@ impl VtParams {
     pub fn values(&self) -> &[u16] {
         &self.buf[..(self.len as usize)]
     }
-
-    /// Returns the current number of parameters.
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.len as usize
-    }
 }
 
 impl core::fmt::Debug for VtParams {
@@ -681,7 +661,7 @@ impl core::fmt::Debug for VtParams {
 /// Zero or more intermediate characters that appeared as part of an
 /// escape sequence.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct VtIntermediates {
+struct VtIntermediates {
     buf: [u8; 2],
     len: u8, // greater than length of buf means overrun
 }
@@ -695,20 +675,6 @@ impl VtIntermediates {
             buf: [0; 2],
             len: 0,
         }
-    }
-
-    /// Constructs a new [`VtIntermediates`] containing the values in the given slice.
-    ///
-    /// A `VtIntermediates` has a maximum capacity of two items, so this will panic if
-    /// the given slice has length three or greater.
-    pub fn from_slice(from: &[u8]) -> Self {
-        let mut ret = Self::new();
-        if from.len() > ret.buf.len() {
-            panic!("too many intermediates")
-        }
-        ret.len = from.len() as u8;
-        (&mut ret.buf[..from.len()]).copy_from_slice(from);
-        ret
     }
 
     /// Attempts to push a new value.
@@ -742,13 +708,6 @@ impl VtIntermediates {
     #[inline(always)]
     pub fn len(&self) -> usize {
         core::cmp::min(self.buf.len(), self.len as usize)
-    }
-
-    /// Returns true if callers have attempted to push more than two intermediate
-    /// characters, and thus subsequent characters have been discarded.
-    #[inline(always)]
-    pub const fn has_overrun(&self) -> bool {
-        self.len as usize > self.buf.len()
     }
 }
 

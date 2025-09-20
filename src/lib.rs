@@ -7,7 +7,7 @@
 //!
 //! For example, given the sequence `"\x1b[10;10H"` this library can report that
 //! this is a control sequence with function character `H` and the parameters
-//! `[10, 10]`, but it's up to the provided handler to interpret that as a command
+//! `[10, 10]`, but it's up to the caller to interpret that as a command
 //! to move the cursor to row 10, column 10.
 //!
 //! As with so many libraries like this, the state machine is based on the
@@ -29,7 +29,7 @@
 
 mod machine;
 
-pub use machine::{VtEvent, VtIntermediates, VtMachine, VtParams};
+pub use machine::{VtEvent, VtMachine};
 
 #[cfg(test)]
 mod tests;
