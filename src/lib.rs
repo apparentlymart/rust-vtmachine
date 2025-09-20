@@ -1,8 +1,9 @@
 //! Virtual terminal state machine implementation.
 //!
 //! This library provides the lowest-level handling of a virtual terminal stream,
-//! recognizing escape sequences and other control characters and delivering
-//! them to a caller-provided handler.
+//! recognizing escape sequences and other control characters and returning
+//! a series of events that should either write to the terminal buffer or
+//! modify the terminal's higher-level state.
 //!
 //! For example, given the sequence `"\x1b[10;10H"` this library can report that
 //! this is a control sequence with function character `H` and the parameters
@@ -17,53 +18,18 @@
 //! Unicode-native machine that does not support legacy character sets.
 //!
 //! The main entry point in this crate is [`VtMachine`], which implements the
-//! state machine and delivers events to an implementation of trait [`VtHandler`].
+//! state machine. Pass each new character to [`VtMachine::write_u8char`], which
+//! then returns a series of events that the character caused.
 //!
-//! ```rust
-//! # use vtmachine::{VtEvent, VtMachine, VtParams, VtIntermediates, vt_handler_fn};
-//! # use u8char::u8char;
-//! # let mut evts: Vec<VtEvent> = Vec::new();
-//! let mut machine = VtMachine::new(vt_handler_fn(|event| {
-//!     println!("{event:?}");
-//! #   evts.push(event);
-//! }));
-//! machine.write("\x1b[2J\x1b[1;1HHello!\r\n");
-//! # drop(machine);
-//! # assert_eq!(&evts[..], &[
-//! #    VtEvent::DispatchCsi { cmd: b'J', params: VtParams::from_slice(&[2]), intermediates: VtIntermediates::new() },
-//! #    VtEvent::DispatchCsi { cmd: b'H', params: VtParams::from_slice(&[1, 1]), intermediates: VtIntermediates::new() },
-//! #    VtEvent::Print(u8char::from_char('H')),
-//! #    VtEvent::Print(u8char::from_char('e')),
-//! #    VtEvent::Print(u8char::from_char('l')),
-//! #    VtEvent::Print(u8char::from_char('l')),
-//! #    VtEvent::Print(u8char::from_char('o')),
-//! #    VtEvent::Print(u8char::from_char('!')),
-//! #    VtEvent::PrintEnd,
-//! #    VtEvent::ExecuteCtrl(b'\r'),
-//! #    VtEvent::ExecuteCtrl(b'\n'),
-//! # ]);
-//! ```
-//!
-//! ```plaintext
-//! DispatchCsi { cmd: 'J', params: VtParams([2]), intermediates: VtIntermediates([]) }
-//! DispatchCsi { cmd: 'H', params: VtParams([1, 1]), intermediates: VtIntermediates([]) }
-//! Print('H')
-//! Print('e')
-//! Print('l')
-//! Print('l')
-//! Print('o')
-//! Print('!')
-//! PrintEnd
-//! ExecuteCtrl('\r')
-//! ExecuteCtrl('\n')
-//! ```
+//! If you are recieving the terminal data as a byte stream (likely!) then
+//! you can use [`::u8char::stream::U8CharStream`] to translate the incoming
+//! bytes into a series of [`u8char`] values to pass to your `VtMachine`. The
+//! "report" example demonstrates that usage pattern.
 #![no_std]
 
-mod handler;
 mod machine;
 
-pub use handler::{vt_handler_fn, VtEvent, VtHandler};
-pub use machine::{VtIntermediates, VtMachine, VtParams};
+pub use machine::{VtEvent, VtIntermediates, VtMachine, VtParams};
 
 #[cfg(test)]
 mod tests;

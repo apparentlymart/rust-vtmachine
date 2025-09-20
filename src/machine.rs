@@ -1,32 +1,30 @@
-use crate::VtHandler;
 use u8char::u8char;
 
 /// Virtual terminal state machine.
 ///
-/// This is the main type in this crate, which takes Unicode scalar values (or strings thereof)
-/// and translates them into low-level events to be interpreted by a provided [`VtHandler`].
+/// This is the main type in this crate, which takes Unicode scalar values
+/// and translates them into low-level events to be interpreted by a
+/// higher-level terminal emulator implementation.
 ///
-/// `VtMachine` implements a _Unicode-native_ terminal state machine that does not support
-/// any legacy character encodings. If working with a raw byte stream, such as from a
-/// pseudoterminal provided by the host OS, the caller must first interpret the bytes
-/// as UTF-8 sequences and provide the result to either [`VtMachine::write`] or
-/// [`VtMachine::write_char`], depending on the granularity of the UTF-8 interpretation.
+/// `VtMachine` implements a _Unicode-native_ terminal state machine that does
+/// not support any legacy character encodings. If working with a raw byte
+/// stream, such as from a pseudoterminal provided by the host OS, the caller
+/// must first interpret the bytes as UTF-8 sequences and provide the result to
+/// either [`VtMachine::write_u8char`].
 ///
-/// This implementation is not suitable for emulating a legacy hardware video terminal
-/// that used switchable character sets.
-pub struct VtMachine<H> {
-    handler: H,
+/// This implementation is not suitable for emulating a legacy hardware video
+/// terminal that used switchable character sets.
+pub struct VtMachine {
     state: State,
     intermediates: VtIntermediates,
     params: VtParams,
     in_literal_chunk: bool,
 }
 
-impl<H> VtMachine<H> {
-    /// Constructs a new [`VtMachine`] that will deliver events to the given [`VtHandler`].
-    pub const fn new(handler: H) -> Self {
+impl VtMachine {
+    /// Constructs a new [`VtMachine`].
+    pub const fn new() -> Self {
         Self {
-            handler,
             state: State::Literal,
             intermediates: VtIntermediates::new(),
             params: VtParams::new(),
@@ -34,46 +32,12 @@ impl<H> VtMachine<H> {
         }
     }
 
-    /// Returns a shared reference to the wrapped [`VtHandler`].
-    #[inline(always)]
-    pub const fn handler(&self) -> &H {
-        &self.handler
-    }
-
-    /// Returns a mutable reference to the wrapped [`VtHandler`].
-    #[inline(always)]
-    pub const fn handler_mut(&mut self) -> &mut H {
-        &mut self.handler
-    }
-
-    /// Consumes the [`VtMachine`] and returns ownership of its wrapped [`VtHandler`].
-    #[inline(always)]
-    pub fn take_handler(self) -> H {
-        self.handler
-    }
-}
-
-impl<H: VtHandler> VtMachine<H> {
-    /// Consumes each of the unicode scalar values in the given string, interpreting
-    /// any control characters to produce special events such as control sequences.
+    /// Consumes a single unicode scalar value given as a [`u8char`], returning
+    /// a series of events that the character causes.
     ///
-    /// Note that this requires the buffer to be [`str`], meaning it's assumed
-    /// to be valid UTF-8. If you're consuming a stream of [`u8`] then you
-    /// might instead consider using [`::u8char::stream::U8CharStream`] and
-    /// passing the [`u8char`] values that its iterators produce directly into
-    /// [`Self::write_u8char`]. (Note that `U8CharStream` is lossy when given
-    /// invalid UTF-8 as input, though.)
-    pub fn write(&mut self, data: &str) {
-        use ::u8char::AsU8Chars;
-        for c in data.u8chars() {
-            self.write_u8char(c);
-        }
-    }
-
-    /// Consumes a single unicode scalar value given as a [`u8char`], in the
-    /// same way as [`Self::write`] would consume each scalar value its the
-    /// given string.
-    pub fn write_u8char(&mut self, c: u8char) {
+    /// The caller should consume the entire iterator in order to stay properly
+    /// synchronized with the `VtMachine`.
+    pub fn write_u8char<'m>(&'m mut self, c: u8char) -> impl Iterator<Item = VtEvent<'m>> {
         // All of the special state transitions and actions are triggered by
         // bytes in the ASCII range, so we will match those based on only the
         // first byte of the UTF-8 character. For values less than 128 these
@@ -114,16 +78,16 @@ impl<H: VtHandler> VtMachine<H> {
         match self.state {
             State::Literal => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
-                    return self.action(Action::Execute, c);
+                    return self.just_action(Action::Execute, c);
                 }
-                _ => return self.action(Action::Print, c),
+                _ => return self.just_action(Action::Print, c),
             },
             State::Escape => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
-                    return self.action(Action::Execute, c);
+                    return self.just_action(Action::Execute, c);
                 }
                 b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x20'..=b'\x2f' => {
                     return self.change_state(State::EscapeIntermediate, Action::Collect, c);
@@ -152,13 +116,13 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::EscapeIntermediate => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
-                    return self.action(Action::Execute, c);
+                    return self.just_action(Action::Execute, c);
                 }
                 b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x20'..=b'\x2f' => {
-                    return self.action(Action::Collect, c);
+                    return self.just_action(Action::Collect, c);
                 }
                 b'\x30'..=b'\x7e' => {
                     return self.change_state(State::Literal, Action::EscDispatch, c);
@@ -167,10 +131,10 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::CtrlStart => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
-                    return self.action(Action::Execute, c);
+                    return self.just_action(Action::Execute, c);
                 }
                 b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x20'..=b'\x2f' => {
                     return self.change_state(State::CtrlIntermediate, Action::Collect, c);
@@ -191,13 +155,13 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::CtrlParam => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
-                    return self.action(Action::Execute, c);
+                    return self.just_action(Action::Execute, c);
                 }
                 b'\x30'..=b'\x39' | b'\x3b' => {
-                    return self.action(Action::Param, c);
+                    return self.just_action(Action::Param, c);
                 }
                 b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x3a' | b'\x3c'..=b'\x3f' => {
                     return self.change_state(State::CtrlMalformed, Action::None, c);
@@ -212,13 +176,13 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::CtrlIntermediate => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
-                    return self.action(Action::Execute, c);
+                    return self.just_action(Action::Execute, c);
                 }
                 b'\x20'..=b'\x2f' => {
-                    return self.action(Action::Collect, c);
+                    return self.just_action(Action::Collect, c);
                 }
                 b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x3a' | b'\x3c'..=b'\x3f' => {
                     return self.change_state(State::CtrlMalformed, Action::None, c);
@@ -230,10 +194,10 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::CtrlMalformed => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
-                    return self.action(Action::Execute, c);
+                    return self.just_action(Action::Execute, c);
                 }
                 b'\x20'..=b'\x3f' | b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x40'..=b'\x7e' => {
                     return self.change_state(State::Literal, Action::None, c);
@@ -242,7 +206,7 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::DevCtrlStart => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x3a' => {
                     return self.change_state(State::DevCtrlMalformed, Action::None, c);
@@ -263,10 +227,10 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::DevCtrlParam => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x30'..=b'\x39' | b'\x3b' => {
-                    return self.action(Action::Param, c);
+                    return self.just_action(Action::Param, c);
                 }
                 b'\x3a' | b'\x3c'..=b'\x3f' => {
                     return self.change_state(State::DevCtrlMalformed, Action::None, c);
@@ -281,10 +245,10 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::DevCtrlIntermediate => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x20'..=b'\x2f' => {
-                    return self.action(Action::Collect, c);
+                    return self.just_action(Action::Collect, c);
                 }
                 b'\x30'..=b'\x3f' => {
                     return self.change_state(State::DevCtrlMalformed, Action::None, c);
@@ -296,46 +260,45 @@ impl<H: VtHandler> VtMachine<H> {
             },
             State::DevCtrlPassthru => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x20'..=b'\x7e' => {
-                    return self.action(Action::Put, c);
+                    return self.just_action(Action::Put, c);
                 }
                 b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 _ => return self.error(c),
             },
             State::DevCtrlMalformed => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x20'..=b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 _ => return self.error(c),
             },
             State::OsCmd => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 b'\x20'..=b'\x7f' => {
-                    return self.action(Action::OscPut, c);
+                    return self.just_action(Action::OscPut, c);
                 }
                 _ => return self.error(c),
             },
             State::IgnoreUntilSt => match fb {
                 b'\x00'..=b'\x17' | b'\x19' | b'\x1c'..=b'\x1f' | b'\x20'..=b'\x7f' => {
-                    return; // Ignored
+                    return self.no_change(); // Ignored
                 }
                 _ => return self.error(c),
             },
         }
     }
 
-    /// Consumes a single unicode scalar value given as a [`char`], in the same way
-    /// as [`Self::write`] would consume each scalar value its the given string.
+    /// Consumes a single unicode scalar value given as a [`char`].
     ///
     /// Note that [`VtMachine`] uses [`u8char`] as its primary representation
     /// of characters, and so this function is really just converting the given
     /// `char` to `u8char` and then passing it to [`Self::write_u8char`]. If
     /// you already have a `u8char` value then it's better to use the other
     /// function directly.
-    pub fn write_char(&mut self, c: char) {
+    pub fn write_char<'m>(&'m mut self, c: char) -> impl Iterator<Item = VtEvent<'m>> {
         self.write_u8char(u8char::from_char(c))
     }
 
@@ -343,89 +306,235 @@ impl<H: VtHandler> VtMachine<H> {
     /// the stream that the data is arriving from is closed from the writer
     /// end.
     ///
-    /// This notifies the handler of the end of any currently-active literal
-    /// chunk and then resets the machine back to its initial state. It's
-    /// okay to keep using the [`VtMachine`] after calling this function, but
-    /// any subsequent character written will be treated as if it is the first
-    /// character in a new stream.
-    pub fn write_end(&mut self) {
-        if self.in_literal_chunk {
-            self.in_literal_chunk = false;
-            self.handler.print_end();
-        }
+    /// This can potentially return some final events caused by ending sequences
+    /// that had not yet been explicitly terminated.
+    ///
+    /// It's okay to keep using the [`VtMachine`] after calling this function,
+    /// but any subsequent character written will be treated as if it is the
+    /// first character in a new stream.
+    pub fn write_end(&mut self) -> impl Iterator<Item = VtEvent<'static>> {
         self.state = State::Literal;
         self.intermediates.clear();
         self.params.clear();
+        let event = if self.in_literal_chunk {
+            self.in_literal_chunk = false;
+            Some(VtEvent::PrintEnd)
+        } else {
+            None
+        };
+        Transition {
+            events: [event, None, None, None, None],
+        }
     }
 
-    fn action(&mut self, action: Action, c: u8char) {
-        if matches!(action, Action::Print) {
-            self.in_literal_chunk = true;
-        } else if self.in_literal_chunk {
-            self.in_literal_chunk = false;
-            self.handler.print_end();
-        }
+    fn action(&mut self, action: Action, c: u8char) -> Option<VtEvent<'static>> {
         match action {
-            Action::Print => self.handler.print(c),
-            Action::Execute => self.handler.execute_ctrl(c.first_byte()),
-            Action::Hook => {
-                self.handler
-                    .dcs_start(c.first_byte(), &self.params, &self.intermediates)
-            }
-            Action::Put => self.handler.dcs_char(c),
-            Action::OscStart => self.handler.osc_start(c.first_byte()),
-            Action::OscPut => self.handler.osc_char(c),
-            Action::OscEnd => self.handler.osc_end(c.first_byte()),
-            Action::Unhook => self.handler.dcs_end(c.first_byte()),
-            Action::CsiDispatch => {
-                self.handler
-                    .dispatch_csi(c.first_byte(), &self.params, &self.intermediates);
-            }
-            Action::EscDispatch => self
-                .handler
-                .dispatch_esc(c.first_byte(), &self.intermediates),
-            Action::None => {}
             Action::Collect => self.intermediates.push(c.first_byte()),
             Action::Param => {
                 self.params.push_csi_char(c);
             }
-            Action::Clear => {
+            Action::Clear | Action::Error => {
                 self.intermediates.clear();
                 self.params.clear();
             }
+            Action::Print => {}
+            Action::Execute => {}
+            Action::Hook => {}
+            Action::Put => {}
+            Action::OscStart => {}
+            Action::OscPut => {}
+            Action::CsiDispatch => {}
+            Action::EscDispatch => {}
+            Action::None => {}
+        }
+        if matches!(action, Action::Print) {
+            self.in_literal_chunk = true;
+        } else if self.in_literal_chunk {
+            self.in_literal_chunk = false;
+            return Some(VtEvent::PrintEnd);
+        }
+        None
+    }
+
+    fn action_event<'m>(&'m self, action: Action, c: u8char) -> Option<VtEvent<'m>> {
+        match action {
+            Action::Print => Some(VtEvent::Print(c)),
+            Action::Execute => Some(VtEvent::ExecuteCtrl(c.first_byte())),
+            Action::Hook => Some(VtEvent::DcsStart {
+                cmd: c.first_byte(),
+                params: &self.params,
+                intermediates: &self.intermediates,
+            }),
+            Action::Put => Some(VtEvent::DcsChar(c)),
+            Action::OscStart => Some(VtEvent::OscStart(c.first_byte())),
+            Action::OscPut => Some(VtEvent::OscChar(c)),
+            Action::CsiDispatch => Some(VtEvent::DispatchCsi {
+                cmd: c.first_byte(),
+                params: &self.params,
+                intermediates: &self.intermediates,
+            }),
+            Action::EscDispatch => Some(VtEvent::DispatchEsc {
+                cmd: c.first_byte(),
+                intermediates: &self.intermediates,
+            }),
+            Action::None => None,
+            Action::Collect => None,
+            Action::Param => None,
+            Action::Clear => None,
+            Action::Error => Some(VtEvent::Error(c)),
         }
     }
 
-    fn change_state(&mut self, state: State, transition: Action, c: u8char) {
-        self.state_exit_actions(self.state, c);
+    fn just_action<'m>(&'m mut self, action: Action, c: u8char) -> Transition<'m> {
+        let main_cleanup_event = self.action(action, c);
+        let main_event = self.action_event(action, c);
+        Transition {
+            events: [main_cleanup_event, main_event, None, None, None],
+        }
+    }
+
+    fn no_change(&self) -> Transition<'static> {
+        Transition { events: [None; 5] }
+    }
+
+    fn change_state<'m>(
+        &'m mut self,
+        state: State,
+        transition: Action,
+        c: u8char,
+    ) -> Transition<'m> {
+        let exit_event = self.state_exit_event(self.state, c);
         self.state = state;
-        self.action(transition, c);
-        self.state_entry_actions(state, c);
-    }
 
-    fn state_entry_actions(&mut self, state: State, c: u8char) {
-        match state {
-            State::Escape => self.action(Action::Clear, c),
-            State::CtrlStart => self.action(Action::Clear, c),
-            State::DevCtrlStart => self.action(Action::Clear, c),
-            State::OsCmd => self.action(Action::OscStart, c),
-            State::DevCtrlPassthru => self.action(Action::Hook, c),
-            _ => {}
+        let entry_action = self.state_entry_action(state);
+        let entry_cleanup_event = if let Some(action) = entry_action {
+            self.action(action, c)
+        } else {
+            None
+        };
+        let main_cleanup_event = self.action(transition, c);
+        let entry_event = if let Some(action) = entry_action {
+            self.action_event(action, c)
+        } else {
+            None
+        };
+        let main_event = self.action_event(transition, c);
+
+        Transition {
+            events: [
+                exit_event,
+                entry_cleanup_event,
+                main_cleanup_event,
+                main_event,
+                entry_event,
+            ],
         }
     }
 
-    fn state_exit_actions(&mut self, state: State, c: u8char) {
+    fn state_entry_action(&mut self, state: State) -> Option<Action> {
         match state {
-            State::OsCmd => self.action(Action::OscEnd, c),
-            State::DevCtrlPassthru => self.action(Action::Unhook, c),
-            _ => {}
+            State::Escape => Some(Action::Clear),
+            State::CtrlStart => Some(Action::Clear),
+            State::DevCtrlStart => Some(Action::Clear),
+            State::OsCmd => Some(Action::OscStart),
+            State::DevCtrlPassthru => Some(Action::Hook),
+            _ => None,
         }
     }
 
-    fn error(&mut self, c: u8char) {
-        self.handler.error(c);
-        self.change_state(State::Literal, Action::None, c);
+    fn state_exit_event(&mut self, state: State, c: u8char) -> Option<VtEvent<'static>> {
+        match state {
+            State::OsCmd => Some(VtEvent::OscEnd(c.first_byte())),
+            State::DevCtrlPassthru => Some(VtEvent::DcsEnd(c.first_byte())),
+            _ => None,
+        }
     }
+
+    fn error<'m>(&'m mut self, c: u8char) -> Transition<'m> {
+        self.change_state(State::Literal, Action::Error, c)
+    }
+}
+
+struct Transition<'m> {
+    events: [Option<VtEvent<'m>>; 5],
+}
+
+impl<'m> Iterator for Transition<'m> {
+    type Item = VtEvent<'m>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for e in self.events.iter_mut() {
+            if let Some(event) = e.take() {
+                return Some(event);
+            }
+        }
+        None
+    }
+}
+
+/// An event from [`VtMachine`].
+///
+/// Some event types include borrowed values from inside the `VtMachine`'s
+/// mutable state, and so all events must be dropped before writing another
+/// character to the machine.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VtEvent<'m> {
+    /// Print a literal character at the current cursor position.
+    Print(u8char),
+    /// Emitted at the end of a series of consecutive [`VtEvent::Print`]
+    /// events before emitting any other event, so that a terminal that
+    /// is attempting to handle Unicode grapheme clusters can treat the
+    /// transition points as "end-of-text" to reset the segmentation state
+    /// machine.
+    PrintEnd,
+    /// Execute an appropriate action for the given control character.
+    ExecuteCtrl(u8),
+    /// Execute an appropriate action for the given control sequence.
+    ///
+    /// This is for sequence starting with the control sequence introducer,
+    /// `ESC[`, and terminated with the byte given in `cmd`.
+    DispatchCsi {
+        /// The symbol at the end of the sequence representing the command
+        /// to perform.
+        cmd: u8,
+        /// The semicolon-separated integer parameters.
+        params: &'m VtParams,
+        /// Any intermediate characters that appeared inside the sequence.
+        intermediates: &'m VtIntermediates,
+    },
+    DispatchEsc {
+        cmd: u8,
+        intermediates: &'m VtIntermediates,
+    },
+    /// Reports the beginning of a device control string.
+    ///
+    /// Events of this type are followed by zero or more [`VtEvent::DcsChar`]
+    /// and then one [`VtEvent::DcsEnd`], when the input stream is valid.
+    DcsStart {
+        cmd: u8,
+        params: &'m VtParams,
+        intermediates: &'m VtIntermediates,
+    },
+    /// Reports a literal character from within the "data string" portion of
+    /// a device control string sequence.
+    DcsChar(u8char),
+    /// Marks the end of a device control string, reporting the character that
+    /// ended it, which should be the "string terminator" character.
+    DcsEnd(u8),
+    /// Reports the beginning of an operating system command.
+    ///
+    /// Events of this type are followed by zero or more [`VtEvent::OscChar`]
+    /// and then one [`VtEvent::OscEnd`], when the input stream is valid.
+    OscStart(u8),
+    /// Reports a literal character from within an operating system command.
+    OscChar(u8char),
+    /// Marks the end of an operating system command, reporting the character
+    /// that ended it.
+    OscEnd(u8),
+    /// Emitted whenever the state machine encounters a character that is
+    /// not expected in its current state.
+    Error(u8char),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -436,14 +545,13 @@ enum Action {
     Put,
     OscStart,
     OscPut,
-    OscEnd,
-    Unhook,
     CsiDispatch,
     EscDispatch,
     None,
     Collect,
     Param,
     Clear,
+    Error,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
