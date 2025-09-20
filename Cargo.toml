@@ -4,7 +4,7 @@ edition = "2021"
 license = "MIT"
 name = "vtmachine"
 repository = "https://github.com/apparentlymart/rust-vtmachine"
-version = "0.2.0"
+version = "0.3.0"
 
 [dependencies]
 u8char = "0.3.0"
