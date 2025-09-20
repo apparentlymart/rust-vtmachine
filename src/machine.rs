@@ -1,3 +1,5 @@
+use core::mem::MaybeUninit;
+
 use u8char::u8char;
 
 /// Virtual terminal state machine.
@@ -322,9 +324,7 @@ impl VtMachine {
         } else {
             None
         };
-        Transition {
-            events: [event, None, None, None, None],
-        }
+        Transition::new([event])
     }
 
     fn action(&mut self, action: Action, c: u8char) -> Option<VtEvent<'static>> {
@@ -388,13 +388,11 @@ impl VtMachine {
     fn just_action<'m>(&'m mut self, action: Action, c: u8char) -> Transition<'m> {
         let main_cleanup_event = self.action(action, c);
         let main_event = self.action_event(action, c);
-        Transition {
-            events: [main_cleanup_event, main_event, None, None, None],
-        }
+        Transition::new([main_cleanup_event, main_event])
     }
 
     fn no_change(&self) -> Transition<'static> {
-        Transition { events: [None; 5] }
+        Transition::new([])
     }
 
     fn change_state<'m>(
@@ -420,15 +418,13 @@ impl VtMachine {
         };
         let main_event = self.action_event(transition, c);
 
-        Transition {
-            events: [
-                exit_event,
-                entry_cleanup_event,
-                main_cleanup_event,
-                main_event,
-                entry_event,
-            ],
-        }
+        Transition::new([
+            exit_event,
+            entry_cleanup_event,
+            main_cleanup_event,
+            main_event,
+            entry_event,
+        ])
     }
 
     fn state_entry_action(&mut self, state: State) -> Option<Action> {
@@ -455,20 +451,45 @@ impl VtMachine {
     }
 }
 
+/// Our iterator type for events caused by writing a new character.
+///
+/// This is a stack-allocated fixed-size buffer for up to five events,
+/// as a compromise to avoid a heap allocation for each new character, since
+/// we need a separate object to represent our potential borrow of data
+/// from inside the `VtMachine`.
 struct Transition<'m> {
-    events: [Option<VtEvent<'m>>; 5],
+    next: usize,
+    events: [MaybeUninit<VtEvent<'m>>; 5],
+}
+
+impl<'m> Transition<'m> {
+    #[inline(always)]
+    pub fn new<const N: usize>(events: [Option<VtEvent<'m>>; N]) -> Self {
+        assert!(const { N <= 5 });
+        let mut ret = Self {
+            next: 5,
+            events: [MaybeUninit::uninit(); 5],
+        };
+        for maybe_event in events.iter().rev() {
+            if let Some(event) = maybe_event {
+                ret.next -= 1;
+                ret.events[ret.next].write(*event);
+            }
+        }
+        ret
+    }
 }
 
 impl<'m> Iterator for Transition<'m> {
     type Item = VtEvent<'m>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for e in self.events.iter_mut() {
-            if let Some(event) = e.take() {
-                return Some(event);
-            }
+        if self.next == self.events.len() {
+            return None;
         }
-        None
+        let ret = unsafe { self.events[self.next].assume_init() };
+        self.next += 1;
+        Some(ret)
     }
 }
 
